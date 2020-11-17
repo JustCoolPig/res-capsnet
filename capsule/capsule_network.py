@@ -7,6 +7,7 @@ from capsule.em_capsule_layer import EMCapsule
 from capsule.primary_capsule_layer import PrimaryCapsule
 from capsule.reconstruction_network import ReconstructionNetwork
 from capsule.norm_layer import Norm
+from capsule.residual_layer import Residual
 
 
 class CapsNet(tf.keras.Model):
@@ -20,6 +21,8 @@ class CapsNet(tf.keras.Model):
         layers = list(map(int, args.layers.split(","))) if args.layers != "" else []
         use_bias=args.use_bias
         use_reconstruction=args.use_reconstruction
+        self.make_skips = args.make_skips
+        self.skip_dist = args.skip_dist
 
         # Create model
         CapsuleType = {
@@ -62,6 +65,7 @@ class CapsNet(tf.keras.Model):
                     out_dim=args.img_height,
                     img_dim=args.img_depth)
             self.norm = Norm()
+            self.residual = Residual()
 
 
     # Inference
@@ -70,8 +74,19 @@ class CapsNet(tf.keras.Model):
         x = self.conv_1(x)
         x = self.primary(x)
         layers = [x]
-        for capsule in self.capsule_layers:
+
+        capsule_outputs = []        
+        for i, capsule in enumerate(self.capsule_layers):
             x = capsule(x)
+            
+            # add skip connection
+            # TODO inspect this model with Tensorboard
+            capsule_outputs.append(x)
+            if self.make_skips and i > 0 and i % self.skip_dist == 0:
+                out_skip = capsule_outputs[i-self.skip_dist]
+                if x.shape == out_skip.shape:
+                    x = self.residual(x, out_skip)
+
             layers.append(x)
         r = self.reconstruction_network(x, y) if self.use_reconstruction else None
         out = self.norm(x)

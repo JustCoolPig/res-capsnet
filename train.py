@@ -63,6 +63,12 @@ argparser.add_argument("--dimensions", default="8,12,12,12,12,16",
 argparser.add_argument("--save_ckpts", default=10, type=int, 
   help="Save the checkpoint after 'save_ckpts' epochs.")
 
+# residual connections
+argparser.add_argument("--make_skips", default=False, type=bool, 
+  help="Add skip connections between layers of same shape.")
+argparser.add_argument("--skip_dist", default=2, type=int, 
+  help="Distance of skip connection.")
+
 
 # Load hyperparameters from cmd args and update with json file
 args = argparser.parse_args()
@@ -114,6 +120,7 @@ def train(train_ds, test_ds, class_names):
 
   with strategy.scope():
     model = CapsNet(args)
+    model.summary()
     optimizer = tf.optimizers.Adam(learning_rate=args.learning_rate)
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
 
