@@ -1,8 +1,3 @@
-try:
-    import cluster_setup
-except ImportError:
-    pass
-
 import os
 import sys
 import time
@@ -53,16 +48,21 @@ argparser.add_argument("--dataset", default="mnist",
   help="mnist, fashion_mnist, svhn, norb")
 
 # Architecture
-argparser.add_argument("--use_bias", default=False, type=bool, 
+argparser.add_argument("--use_bias", default=True, type=bool, 
   help="Add a bias term to the preactivation")
 argparser.add_argument("--use_reconstruction", default=True, type=bool, 
   help="Use the reconstruction network as regularization loss")
 argparser.add_argument("--routing", default="rba",
   help="rba, em")
 argparser.add_argument("--layers", default="64,32,32,32,32,10",
-  help=", spereated list of layers. Each number represents the number of hidden units except for the first layer the number of channels.")
+  help=", seperated list of layers. Each number represents the number of hidden units except for the first layer the number of channels.")
 argparser.add_argument("--dimensions", default="8,12,12,12,12,16",
-  help=", spereated list of layers. Each number represents the dimension of the layer.")
+  help=", seperated list of layers. Each number represents the dimension of the layer.")
+
+# miscellaneous
+argparser.add_argument("--save_ckpts", default=10, type=int, 
+  help="Save the checkpoint after 'save_ckpts' epochs.")
+
 
 # Load hyperparameters from cmd args and update with json file
 args = argparser.parse_args()
@@ -93,7 +93,6 @@ def compute_loss(logits, y, reconstruction, x):
 def compute_accuracy(logits, labels):
   predictions = tf.cast(tf.argmax(tf.nn.softmax(logits), axis=1), tf.int32)
   return tf.reduce_mean(tf.cast(tf.equal(predictions, labels), tf.float32))
-
 
 
 def train(train_ds, test_ds, class_names):
@@ -163,38 +162,6 @@ def train(train_ds, test_ds, class_names):
     max_acc = 0.0
     for epoch in range(args.epochs):
       ########################################
-      # Test
-      ########################################
-      if args.test:
-        cm = np.zeros((10, 10))
-        test_acc = []
-        for data in test_ds:
-          distr_acc, distr_cm = distributed_test_step(data)
-          for r in range(num_replicas):
-            if num_replicas > 1:
-              cm += distr_cm.values[r]
-              test_acc.append(distr_acc.values[r].numpy())
-            else:
-              cm += distr_cm
-              test_acc.append(distr_acc)
-
-        # Log test results (for replica 0 only for activation map and reconstruction)
-        test_acc = np.mean(test_acc)
-        max_acc = test_acc if test_acc > max_acc else max_acc
-        figure = utils.plot_confusion_matrix(cm.numpy(), class_names)
-        cm_image = utils.plot_to_image(figure)
-        print("TEST | epoch %d (%d): acc=%.4f, loss=%.4f" % 
-              (epoch, step, test_acc, test_loss.result()), flush=True)  
-
-        with test_writer.as_default(): 
-          tf.summary.image("Confusion Matrix", cm_image, step=step)
-          tf.summary.scalar("General/Accuracy", test_acc, step=step)
-          tf.summary.scalar("General/Loss", test_loss.result(), step=step)
-        test_loss.reset_states()
-        test_writer.flush()
-
-
-      ########################################
       # Train
       ########################################
       for data in train_ds:
@@ -236,8 +203,39 @@ def train(train_ds, test_ds, class_names):
 
       ####################
       # Checkpointing
-      if epoch % 15 == 0:
+      if epoch % args.save_ckpts == 0:
         checkpoint.save(ckpt_dir)
+
+      ########################################
+      # Test
+      ########################################
+      if args.test:
+        cm = np.zeros((10, 10))
+        test_acc = []
+        for data in test_ds:
+          distr_acc, distr_cm = distributed_test_step(data)
+          for r in range(num_replicas):
+            if num_replicas > 1:
+              cm += distr_cm.values[r]
+              test_acc.append(distr_acc.values[r].numpy())
+            else:
+              cm += distr_cm
+              test_acc.append(distr_acc)
+
+        # Log test results (for replica 0 only for activation map and reconstruction)
+        test_acc = np.mean(test_acc)
+        max_acc = test_acc if test_acc > max_acc else max_acc
+        figure = utils.plot_confusion_matrix(cm.numpy(), class_names)
+        cm_image = utils.plot_to_image(figure)
+        print("TEST | epoch %d (%d): acc=%.4f, loss=%.4f" % 
+              (epoch, step, test_acc, test_loss.result()), flush=True)  
+
+        with test_writer.as_default(): 
+          tf.summary.image("Confusion Matrix", cm_image, step=step)
+          tf.summary.scalar("General/Accuracy", test_acc, step=step)
+          tf.summary.scalar("General/Loss", test_loss.result(), step=step)
+        test_loss.reset_states()
+        test_writer.flush()
 
     return max_acc
 
@@ -282,4 +280,9 @@ def main():
 
        
 if __name__ == '__main__':
+    try:
+      import cluster_setup
+    except ImportError:
+      print('IMPORT ERROR')
+      pass
     main()
