@@ -19,8 +19,6 @@ class CapsNet(tf.keras.Model):
         dimensions = list(map(int, args.dimensions.split(","))) if args.dimensions != "" else []
         routing=args.routing
         layers = list(map(int, args.layers.split(","))) if args.layers != "" else []
-        use_bias=args.use_bias
-        use_reconstruction=args.use_reconstruction
         self.make_skips = args.make_skips
         self.skip_dist = args.skip_dist
 
@@ -30,8 +28,8 @@ class CapsNet(tf.keras.Model):
             "em": EMCapsule
         }
 
-        self.use_bias=use_bias
-        self.use_reconstruction = use_reconstruction
+        self.use_bias=args.use_bias
+        self.use_reconstruction = args.use_reconstruction
         self.num_classes = layers[-1]
 
         with tf.name_scope(self.name):
@@ -43,10 +41,10 @@ class CapsNet(tf.keras.Model):
             self.primary = PrimaryCapsule(name="PrimaryCapsuleLayer", channels=channels, dim=dim, kernel_size=(9, 9))
             self.capsule_layers = []
 
+            size = 6*6 if (args.img_width == 28) else \
+                    8*8 if (args.img_width == 32) else \
+                    4*4
             for i in range(1, len(layers)):
-                size = 6*6 if (args.img_width == 28) else \
-                       8*8 if (args.img_width == 32) else \
-                       4*4
                 self.capsule_layers.append(
                     CapsuleType[routing](
                         name="CapsuleLayer%d" % i,
@@ -85,6 +83,7 @@ class CapsNet(tf.keras.Model):
             if self.make_skips and i > 0 and i % self.skip_dist == 0:
                 out_skip = capsule_outputs[i-self.skip_dist]
                 if x.shape == out_skip.shape:
+                    print("add skip connection from hidden layer %d to %d", i-self.skip_dist, i)
                     x = self.residual(x, out_skip)
 
             layers.append(x)

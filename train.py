@@ -120,7 +120,6 @@ def train(train_ds, test_ds, class_names):
 
   with strategy.scope():
     model = CapsNet(args)
-    model.summary()
     optimizer = tf.optimizers.Adam(learning_rate=args.learning_rate)
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
 
