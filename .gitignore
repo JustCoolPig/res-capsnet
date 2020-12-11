@@ -3,11 +3,12 @@ cluster_setup.py
 .vscode/
 experiments/
 scripts/slurm
-*.out
 create_graphs.py
 sign_results.png
 .vscode
 run_*
+docs/
+logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

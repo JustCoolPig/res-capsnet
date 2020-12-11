@@ -4,6 +4,7 @@ import tensorflow as tf
 
 from capsule.capsule_layer import Capsule
 from capsule.em_capsule_layer import EMCapsule
+from capsule.gamma_capsule_layer import GammaCapsule
 from capsule.primary_capsule_layer import PrimaryCapsule
 from capsule.reconstruction_network import ReconstructionNetwork
 from capsule.norm_layer import Norm
@@ -25,7 +26,8 @@ class CapsNet(tf.keras.Model):
         # Create model
         CapsuleType = {
             "rba": Capsule,
-            "em": EMCapsule
+            "em": EMCapsule,
+            "sda": GammaCapsule
         }
 
         self.use_bias=args.use_bias
@@ -78,12 +80,10 @@ class CapsNet(tf.keras.Model):
             x = capsule(x)
             
             # add skip connection
-            # TODO inspect this model with Tensorboard
             capsule_outputs.append(x)
             if self.make_skips and i > 0 and i % self.skip_dist == 0:
                 out_skip = capsule_outputs[i-self.skip_dist]
                 if x.shape == out_skip.shape:
-                    print("add skip connection from hidden layer %d to %d", i-self.skip_dist, i)
                     x = self.residual(x, out_skip)
 
             layers.append(x)

@@ -53,14 +53,14 @@ argparser.add_argument("--use_bias", default=True, type=bool,
 argparser.add_argument("--use_reconstruction", default=True, type=bool, 
   help="Use the reconstruction network as regularization loss")
 argparser.add_argument("--routing", default="rba",
-  help="rba, em")
+  help="rba, em, sda")
 argparser.add_argument("--layers", default="64,32,32,32,32,10",
   help=", seperated list of layers. Each number represents the number of hidden units except for the first layer the number of channels.")
 argparser.add_argument("--dimensions", default="8,12,12,12,12,16",
   help=", seperated list of layers. Each number represents the dimension of the layer.")
 
 # miscellaneous
-argparser.add_argument("--save_ckpts", default=10, type=int, 
+argparser.add_argument("--save_ckpts", default=31, type=int, 
   help="Save the checkpoint after 'save_ckpts' epochs.")
 
 # residual connections
