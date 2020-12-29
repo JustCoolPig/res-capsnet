@@ -26,6 +26,8 @@ class ReconstructionNetwork(tf.keras.Model):
 
 
     def call(self, x, y):
+        print('x', x.shape)
+        print('y', y.shape)
         x = self.flatten(x)
         x = self.fc1(x)
         x = self.fc2(x)

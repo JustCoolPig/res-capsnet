@@ -5,6 +5,7 @@ import tensorflow as tf
 from capsule.capsule_layer import Capsule
 from capsule.em_capsule_layer import EMCapsule
 from capsule.gamma_capsule_layer import GammaCapsule
+from capsule.conv_capsule_layer import ConvCapsule
 from capsule.primary_capsule_layer import PrimaryCapsule
 from capsule.reconstruction_network import ReconstructionNetwork
 from capsule.norm_layer import Norm
@@ -18,7 +19,7 @@ class CapsNet(tf.keras.Model):
 
         # Set params
         dimensions = list(map(int, args.dimensions.split(","))) if args.dimensions != "" else []
-        routing=args.routing
+        routing = args.routing
         layers = list(map(int, args.layers.split(","))) if args.layers != "" else []
         self.make_skips = args.make_skips
         self.skip_dist = args.skip_dist
@@ -27,7 +28,8 @@ class CapsNet(tf.keras.Model):
         CapsuleType = {
             "rba": Capsule,
             "em": EMCapsule,
-            "sda": GammaCapsule
+            "sda": GammaCapsule,
+            "conv": ConvCapsule
         }
 
         self.use_bias=args.use_bias
@@ -40,7 +42,7 @@ class CapsNet(tf.keras.Model):
             channels = layers[0]
             dim = dimensions[0]
             self.conv_1 = tf.keras.layers.Conv2D(channels * dim, (9, 9), kernel_initializer="he_normal", padding='valid', activation="relu")
-            self.primary = PrimaryCapsule(name="PrimaryCapsuleLayer", channels=channels, dim=dim, kernel_size=(9, 9))
+            self.primary = PrimaryCapsule(name="PrimaryCapsuleLayer", channels=channels, dim=dim, kernel_size=(9, 9), routing=routing)
             self.capsule_layers = []
 
             size = 6*6 if (args.img_width == 28) else \
@@ -70,6 +72,8 @@ class CapsNet(tf.keras.Model):
 
     # Inference
     def call(self, x, y):
+        print('x', x.shape)
+        print('y', y.shape)
         x = self.reshape(x)
         x = self.conv_1(x)
         x = self.primary(x)
@@ -87,6 +91,7 @@ class CapsNet(tf.keras.Model):
                     x = self.residual(x, out_skip)
 
             layers.append(x)
+ 
         r = self.reconstruction_network(x, y) if self.use_reconstruction else None
         out = self.norm(x)
 

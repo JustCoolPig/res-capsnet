@@ -19,7 +19,7 @@ class Capsule(tf.keras.Model):
         self.use_bias = use_bias
 
         with tf.name_scope(self.name):
-            w_init = tf.random_normal_initializer(stddev=stdev)
+            w_init = tf.random_normal_initializer(stddev=0.2)
             self.W = tf.Variable(name="W", initial_value=w_init(shape=(1, out_capsules, in_capsules, out_dim, in_dim),
                                                     dtype='float32'),
                                 trainable=True)
