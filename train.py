@@ -20,6 +20,7 @@ from data.mnist import create_mnist
 from data.fashion_mnist import create_fashion_mnist
 from data.norb import create_norb
 from data.svhn import create_svhn
+from data.cifar10 import create_cifar10
 
 
 #
@@ -276,6 +277,8 @@ def main():
     train_ds, test_ds, class_names = create_norb(args)
   elif args.dataset=="svhn":
     train_ds, test_ds, class_names = create_svhn(args)
+  elif args.dataset=="cifar10":
+    train_ds, test_ds, class_names = create_cifar10(args)
   else:
     raise Exception("Unknown datastet %s." % args.dataset)
 
