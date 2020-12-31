@@ -19,7 +19,7 @@ class CapsNet(tf.keras.Model):
 
         # Set params
         dimensions = list(map(int, args.dimensions.split(","))) if args.dimensions != "" else []
-        routing = args.routing
+        self.routing = args.routing
         layers = list(map(int, args.layers.split(","))) if args.layers != "" else []
         self.make_skips = args.make_skips
         self.skip_dist = args.skip_dist
@@ -42,15 +42,16 @@ class CapsNet(tf.keras.Model):
             channels = layers[0]
             dim = dimensions[0]
             self.conv_1 = tf.keras.layers.Conv2D(channels * dim, (9, 9), kernel_initializer="he_normal", padding='valid', activation="relu")
-            self.primary = PrimaryCapsule(name="PrimaryCapsuleLayer", channels=channels, dim=dim, kernel_size=(9, 9), routing=routing)
+            self.primary = PrimaryCapsule(name="PrimaryCapsuleLayer", channels=channels, dim=dim, kernel_size=(9, 9), routing=self.routing)
             self.capsule_layers = []
 
             size = 6*6 if (args.img_width == 28) else \
                     8*8 if (args.img_width == 32) else \
                     4*4
+
             for i in range(1, len(layers)):
                 self.capsule_layers.append(
-                    CapsuleType[routing](
+                    CapsuleType[self.routing](
                         name="CapsuleLayer%d" % i,
                         in_capsules = ((size * channels) if i == 1 else layers[i-1]), 
                         in_dim = (dim if i == 1 else dimensions[i-1]), 
@@ -58,6 +59,14 @@ class CapsNet(tf.keras.Model):
                         out_dim = dimensions[i], 
                         use_bias = self.use_bias)
                 )   
+            
+            self.FCCapsuleLayer = Capsule(
+                        name="CapsuleLayer",
+                        in_capsules = 512, 
+                        in_dim = 8, 
+                        out_capsules = 10,
+                        out_dim = 16, 
+                        use_bias = self.use_bias)                    
 
             if self.use_reconstruction:
                 self.reconstruction_network = ReconstructionNetwork(
@@ -66,14 +75,13 @@ class CapsNet(tf.keras.Model):
                     in_dim=dimensions[-1],
                     out_dim=args.img_height,
                     img_dim=args.img_depth)
+
             self.norm = Norm()
             self.residual = Residual()
 
 
     # Inference
     def call(self, x, y):
-        print('x', x.shape)
-        print('y', y.shape)
         x = self.reshape(x)
         x = self.conv_1(x)
         x = self.primary(x)
@@ -90,7 +98,14 @@ class CapsNet(tf.keras.Model):
                 if x.shape == out_skip.shape:
                     x = self.residual(x, out_skip)
 
+            print('x', x.shape)
             layers.append(x)
+        
+        if self.routing == 'conv':
+            _, H, W, D, dim = x.shape
+            x = tf.reshape(x, shape=(-1, H * W * D, dim))
+            print('r', x.shape)
+            x = self.FCCapsuleLayer(x)
  
         r = self.reconstruction_network(x, y) if self.use_reconstruction else None
         out = self.norm(x)
