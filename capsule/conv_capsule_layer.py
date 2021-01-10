@@ -47,7 +47,6 @@ class ConvCapsule(layers.Layer):
         self.b = self.add_weight(shape=[1, 1, self.num_caps, self.caps_dim],
                                  initializer=initializers.constant(0.1),
                                  name='b')
-
         self.built = True
 
 
@@ -79,7 +78,7 @@ class ConvCapsule(layers.Layer):
                                      input_dim=self.num_in_caps,
                                      output_dim=self.num_caps,
                                      num_routing=self.routings)
-
+        
         return activations
 
 

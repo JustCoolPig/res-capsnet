@@ -14,7 +14,7 @@ from tensorflow.keras import layers, optimizers, datasets
 import sklearn.metrics
 
 import utils
-from capsule.capsule_network import CapsNet
+from capsule.conv_capsule_network import ConvCapsNet
 from capsule.utils import margin_loss
 from data.mnist import create_mnist
 from data.fashion_mnist import create_fashion_mnist
@@ -55,9 +55,9 @@ argparser.add_argument("--use_reconstruction", default=True, type=bool,
   help="Use the reconstruction network as regularization loss")
 argparser.add_argument("--routing", default="rba",
   help="rba, em, sda, conv")
-argparser.add_argument("--layers", default="64,32,32,10",
+argparser.add_argument("--layers", default="64,10",
   help=", seperated list of layers. Each number represents the number of hidden units except for the first layer the number of channels.")
-argparser.add_argument("--dimensions", default="8,8,8,16",
+argparser.add_argument("--dimensions", default="8,16",
   help=", seperated list of layers. Each number represents the dimension of the layer.")
 
 # miscellaneous
@@ -120,7 +120,7 @@ def train(train_ds, test_ds, class_names):
   test_writer = tf.summary.create_file_writer("%s/log/test" % args.log_dir)
 
   with strategy.scope():
-    model = CapsNet(args)
+    model = ConvCapsNet(args)
     optimizer = tf.optimizers.Adam(learning_rate=args.learning_rate)
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
 
@@ -132,6 +132,7 @@ def train(train_ds, test_ds, class_names):
       x, y = inputs
       with tf.GradientTape() as tape:
         logits, reconstruction, layers = model(x, y)
+        model.summary()
         loss, _ = compute_loss(logits, y, reconstruction, x)
       
       grads = tape.gradient(loss, model.trainable_variables)

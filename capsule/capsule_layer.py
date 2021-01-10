@@ -23,7 +23,6 @@ class Capsule(tf.keras.Model):
             self.W = tf.Variable(name="W", initial_value=w_init(shape=(1, out_capsules, in_capsules, out_dim, in_dim),
                                                     dtype='float32'),
                                 trainable=True)
-        
             if self.use_bias:
                 bias_init = tf.constant_initializer(0.1)
                 self.bias = tf.Variable(name="bias", initial_value=bias_init(shape=(1, out_capsules, out_dim),
