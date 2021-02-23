@@ -24,11 +24,13 @@ class ConvCapsNet(tf.keras.Model):
 
         self.use_bias=args.use_bias
         self.use_reconstruction = args.use_reconstruction
+        self.make_skips = args.make_skips
+        self.skip_dist = args.skip_dist
 
-        img_size = 30
-        conv1_filters, conv1_kernel, conv1_stride = 128, 9, 2
-        out_height = math.ceil((img_size - conv1_kernel) / conv1_stride) + 1
-        out_width = math.ceil((img_size - conv1_kernel) / conv1_stride) + 1
+        img_size = 24 # mnist 
+        conv1_filters, conv1_kernel, conv1_stride = 128, 7, 2
+        out_height = (img_size - conv1_kernel) // conv1_stride + 1
+        out_width = (img_size - conv1_kernel) // conv1_stride + 1 
 
         with tf.name_scope(self.name):
 
@@ -37,7 +39,7 @@ class ConvCapsNet(tf.keras.Model):
                         conv1_filters, 
                         kernel_size=conv1_kernel, 
                         strides=conv1_stride, 
-                        padding='same', 
+                        padding='valid', 
                         activation="relu", 
                         name="conv1")
 
@@ -54,7 +56,8 @@ class ConvCapsNet(tf.keras.Model):
                             in_dim=dimensions[i], 
                             out_dim=dimensions[i], 
                             out_capsules=layers[i+1], 
-                            kernel_size=7))
+                            kernel_size=5,
+                            routing_iterations=args.iterations))
 
             # flatten for input to FC capsule
             self.flatten = tf.keras.layers.Reshape(target_shape=(out_height * out_width * layers[-2], dimensions[0]), name='flatten')
@@ -77,16 +80,27 @@ class ConvCapsNet(tf.keras.Model):
                     img_dim=args.img_depth)
 
             self.norm = Norm()
+            self.residual = Residual()
 
 
     # Inference
     def call(self, x, y):
-
         x = self.conv_1(x)
         x = self.capsuleShape(x)
+        layers = [x]
 
-        for caps_layer in self.capsule_layers:
-            x = caps_layer(x)
+        capsule_outputs = []        
+        for i, capsule in enumerate(self.capsule_layers):
+            x = capsule(x)
+            
+            # add skip connection
+            capsule_outputs.append(x)
+            if self.make_skips and i > 0 and i % self.skip_dist == 0:
+                out_skip = capsule_outputs[i-self.skip_dist]
+                if x.shape == out_skip.shape:
+                    x = self.residual(x, out_skip)
+
+            layers.append(x)
 
         x = self.flatten(x)
         x = self.FCCapsuleLayer(x)
@@ -94,4 +108,4 @@ class ConvCapsNet(tf.keras.Model):
         r = self.reconstruction_network(x, y) if self.use_reconstruction else None
         out = self.norm(x)
 
-        return out, r, [x]
+        return out, r, layers

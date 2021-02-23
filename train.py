@@ -35,7 +35,7 @@ argparser.add_argument("--reconstruction_weight", default=0.00001, type=float,
   help="Loss of reconstructions")
 argparser.add_argument("--log_dir", default="experiments/tmp", 
   help="Log dir for tensorbaord")    
-argparser.add_argument("--batch_size", default=128, type=int, 
+argparser.add_argument("--batch_size", default=32, type=int, 
   help="Batch size of training data")
 argparser.add_argument("--enable_tf_function", default=True, type=bool, 
   help="Enable tf.function for faster execution")
@@ -59,6 +59,8 @@ argparser.add_argument("--layers", default="64,32,10",
   help=", seperated list of layers. Each number represents the number of hidden units except for the first layer the number of channels.")
 argparser.add_argument("--dimensions", default="8,8,16",
   help=", seperated list of layers. Each number represents the dimension of the layer.")
+
+argparser.add_argument("--iterations", default=2, type=int)
 
 # miscellaneous
 argparser.add_argument("--save_ckpts", default=31, type=int, 
@@ -132,7 +134,7 @@ def train(train_ds, test_ds, class_names):
       x, y = inputs
       with tf.GradientTape() as tape:
         logits, reconstruction, layers = model(x, y)
-        model.summary()
+        #model.summary()
         loss, _ = compute_loss(logits, y, reconstruction, x)
       
       grads = tape.gradient(loss, model.trainable_variables)

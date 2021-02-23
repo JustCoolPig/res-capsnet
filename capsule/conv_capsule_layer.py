@@ -16,16 +16,17 @@ class ConvCapsule(layers.Layer):
         - https://github.com/amobiny/Deep_CapsNet
     '''
 
-    def __init__(self, in_capsules, in_dim, out_capsules, out_dim, stdev=0.2, routing_iterations=2, use_bias=True,
-            kernel_size=3, strides=1, padding='same', name=''):
+    def __init__(self, in_capsules, in_dim, out_capsules, out_dim, routing_iterations=2,
+            kernel_size=3, stride=1, padding='same', name=''):
         super(ConvCapsule, self).__init__(name=name)
         self.kernel_size = kernel_size
         self.num_caps = in_capsules
         self.caps_dim = in_dim
-        self.strides = strides
+        self.strides = stride
         self.padding = padding
         self.routings = routing_iterations
-        self.kernel_initializer = initializers.get('glorot_uniform')
+        self.w_init = tf.random_normal_initializer(stddev=0.2)
+        self.b_init = tf.constant_initializer(0.1)
 
 
     def build(self, input_shape):
@@ -40,12 +41,13 @@ class ConvCapsule(layers.Layer):
         # Transform matrix
         self.W = self.add_weight(shape=[self.kernel_size, self.kernel_size,
                                         self.in_caps_dim, self.num_caps * self.caps_dim],
-                                 initializer=self.kernel_initializer,
-                                 trainable=self.trainable,
+                                 initializer=self.w_init,
+                                 trainable=True,
                                  name='W')
 
         self.b = self.add_weight(shape=[1, 1, self.num_caps, self.caps_dim],
-                                 initializer=initializers.constant(0.1),
+                                 initializer=self.b_init,
+                                 trainable=True,
                                  name='b')
         self.built = True
 
