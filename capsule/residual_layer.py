@@ -11,3 +11,6 @@ class Residual(tf.keras.Model):
         x = tf.keras.layers.Add()([out_prev, out_skip])
         #x = squash(x)
         return x
+
+    def count_params(self):
+        return 0
