@@ -11,6 +11,7 @@ from capsule.primary_capsule_layer import PrimaryCapsule
 from capsule.reconstruction_network import ReconstructionNetwork
 from capsule.norm_layer import Norm
 from capsule.residual_layer import Residual
+from tensorflow.keras.layers import BatchNormalization
 
 
 class ConvCapsNet(tf.keras.Model):
@@ -27,7 +28,12 @@ class ConvCapsNet(tf.keras.Model):
         self.make_skips = args.make_skips
         self.skip_dist = args.skip_dist
 
-        img_size = 24 # mnist 
+        if args.dataset == 'mnist':
+            img_size = 24 
+        elif args.dataset == 'cifar10':
+            img_size = 32
+        else:
+            raise NotImplementedError()
         conv1_filters, conv1_kernel, conv1_stride = 128, 7, 2
         out_height = (img_size - conv1_kernel) // conv1_stride + 1
         out_width = (img_size - conv1_kernel) // conv1_stride + 1 
@@ -45,6 +51,8 @@ class ConvCapsNet(tf.keras.Model):
 
             # reshape into capsule shape
             self.capsuleShape = tf.keras.layers.Reshape(target_shape=(out_height, out_width, 1, conv1_filters), name='toCapsuleShape')
+
+            self.batchNorm = BatchNormalization()
             
             # convolutional capsule layers
             self.capsule_layers = []
@@ -56,11 +64,11 @@ class ConvCapsNet(tf.keras.Model):
                             in_dim=dimensions[i], 
                             out_dim=dimensions[i], 
                             out_capsules=layers[i+1], 
-                            kernel_size=5,
+                            kernel_size=3,
                             routing_iterations=args.iterations))
 
             # flatten for input to FC capsule
-            self.flatten = tf.keras.layers.Reshape(target_shape=(out_height * out_width * layers[-2], dimensions[0]), name='flatten')
+            self.flatten = tf.keras.layers.Reshape(target_shape=(out_height * out_width * layers[-2], dimensions[-2]), name='flatten')
             
             # fully connected caspule layer
             self.FCCapsuleLayer = Capsule(
@@ -86,20 +94,26 @@ class ConvCapsNet(tf.keras.Model):
     # Inference
     def call(self, x, y):
         x = self.conv_1(x)
+        x = self.batchNorm(x)
         x = self.capsuleShape(x)
         layers = [x]
 
-        capsule_outputs = []        
-        for i, capsule in enumerate(self.capsule_layers):
+        capsule_outputs = []    
+        i = 0    
+        for j, capsule in enumerate(self.capsule_layers):
             x = capsule(x)
+            #print('shape: ', x.shape)
             
             # add skip connection
             capsule_outputs.append(x)
             if self.make_skips and i > 0 and i % self.skip_dist == 0:
-                out_skip = capsule_outputs[i-self.skip_dist]
+                out_skip = capsule_outputs[j-self.skip_dist]
                 if x.shape == out_skip.shape:
+                    #print('make residual connection from ', j-self.skip_dist, ' to ', j)
                     x = self.residual(x, out_skip)
-
+                    i = -1
+            
+            i += 1
             layers.append(x)
 
         x = self.flatten(x)

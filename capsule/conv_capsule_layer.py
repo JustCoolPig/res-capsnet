@@ -24,7 +24,7 @@ class ConvCapsule(layers.Layer):
         self.caps_dim = in_dim
         self.strides = stride
         self.padding = padding
-        self.routings = routing_iterations
+        self.iterations = routing_iterations
         self.w_init = tf.random_normal_initializer(stddev=0.2)
         self.b_init = tf.constant_initializer(0.1)
 
@@ -73,14 +73,13 @@ class ConvCapsule(layers.Layer):
         logit_shape = tf.stack([input_shape[1], input_shape[0], votes_shape[1], votes_shape[2], self.num_caps])
         biases_replicated = tf.tile(self.b, [conv_height, conv_width, 1, 1])
 
-        activations = update_routing(votes=votes,
-                                     biases=biases_replicated,
-                                     logit_shape=logit_shape,
-                                     num_dims=6,
-                                     input_dim=self.num_in_caps,
-                                     output_dim=self.num_caps,
-                                     num_routing=self.routings)
-        
+        activations = dynamic_routing(votes=votes,
+                                    biases=biases_replicated,
+                                    logit_shape=logit_shape,
+                                    num_dims=6,
+                                    input_dim=self.num_in_caps,
+                                    output_dim=self.num_caps,
+                                    num_routing=self.iterations)
         return activations
 
 
@@ -100,7 +99,7 @@ class ConvCapsule(layers.Layer):
 
 
 # routing by agreement
-def update_routing(votes, biases, logit_shape, num_dims, input_dim, output_dim, num_routing):
+def dynamic_routing(votes, biases, logit_shape, num_dims, input_dim, output_dim, num_routing):
     if num_dims == 6:
         votes_t_shape = [5, 0, 1, 2, 3, 4]
         r_t_shape = [1, 2, 3, 4, 5, 0]
