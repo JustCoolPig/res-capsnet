@@ -16,15 +16,18 @@ class ConvCapsule(layers.Layer):
         - https://github.com/amobiny/Deep_CapsNet
     '''
 
-    def __init__(self, in_capsules, in_dim, out_capsules, out_dim, routing_iterations=2,
+    def __init__(self, in_capsules, in_dim, out_capsules, out_dim, routing_iterations=2, routing='dynamic',
             kernel_size=3, stride=1, padding='same', name=''):
         super(ConvCapsule, self).__init__(name=name)
         self.kernel_size = kernel_size
         self.num_caps = in_capsules
+        self.out_caps = out_capsules
         self.caps_dim = in_dim
+        self.out_dim = out_dim
         self.strides = stride
         self.padding = padding
         self.iterations = routing_iterations
+        self.routing = routing
         self.w_init = tf.random_normal_initializer(stddev=0.2)
         self.b_init = tf.constant_initializer(0.1)
 
@@ -73,50 +76,26 @@ class ConvCapsule(layers.Layer):
         logit_shape = tf.stack([input_shape[1], input_shape[0], votes_shape[1], votes_shape[2], self.num_caps])
         biases_replicated = tf.tile(self.b, [conv_height, conv_width, 1, 1])
 
-        activations = dynamic_routing(votes=votes,
-                                    biases=biases_replicated,
-                                    logit_shape=logit_shape,
-                                    num_dims=6,
-                                    input_dim=self.num_in_caps,
-                                    output_dim=self.num_caps,
-                                    num_routing=self.iterations)
+        if self.routing == 'rba':
+            activations = dynamic_routing(votes, biases_replicated, logit_shape, self.num_in_caps, self.iterations)
+        elif self.routing == 'sda':
+            activations = sda_routing(votes, biases_replicated, logit_shape, self.num_in_caps, self.out_caps, self.iterations)
+        else:
+            raise NotImplementedError('Not implemented')
         return activations
 
 
-    def compute_output_shape(self, input_shape):
-        space = input_shape[1:-2]
-        new_space = []
-        for i in range(len(space)):
-            new_dim = conv_output_length(
-                space[i],
-                self.kernel_size,
-                padding=self.padding,
-                stride=self.strides,
-                dilation=1)
-            new_space.append(new_dim)
+# scaled distance agreement routing
+def sda_routing(votes, biases, logit_shape, input_dim, out_capsules, num_routing):
 
-        return (input_shape[0],) + tuple(new_space) + (self.num_caps, self.caps_dim)
-
-
-# routing by agreement
-def dynamic_routing(votes, biases, logit_shape, num_dims, input_dim, output_dim, num_routing):
-    if num_dims == 6:
-        votes_t_shape = [5, 0, 1, 2, 3, 4]
-        r_t_shape = [1, 2, 3, 4, 5, 0]
-    elif num_dims == 4:
-        votes_t_shape = [3, 0, 1, 2]
-        r_t_shape = [1, 2, 3, 0]
-    else:
-        raise NotImplementedError('Not implemented')
-
+    votes_t_shape = [5, 0, 1, 2, 3, 4]
+    r_t_shape = [1, 2, 3, 4, 5, 0]
     votes_trans = tf.transpose(votes, votes_t_shape)
-    _, _, _, height, width, caps = votes_trans.get_shape()
+
+    # TODO  Ensure that ||u_hat|| <= ||v_i||
 
     def _body(i, logits, activations):
         """Routing while loop."""
-        # route: [batch, input_dim, output_dim, ...]
-
-        # logits = tf.tile(tf.reduce_mean(logits, axis=1, keep_dims=True), [1, input_dim, 1, 1, 1])
 
         route = tf.nn.softmax(logits, axis=-1)
         preactivate_unrolled = route * votes_trans
@@ -124,10 +103,57 @@ def dynamic_routing(votes, biases, logit_shape, num_dims, input_dim, output_dim,
         preactivate = tf.reduce_sum(preact_trans, axis=1) + biases
         activation = squash(preactivate)
         activations = activations.write(i, activation)
+
         act_3d = tf.expand_dims(activation, 1)
-        tile_shape = np.ones(num_dims, dtype=np.int32).tolist()
-        tile_shape[1] = input_dim
-        act_replicated = tf.tile(act_3d, tile_shape)
+        act_replicated = tf.tile(act_3d, [1, input_dim, 1, 1, 1, 1])
+        
+        # Calculate scale factor t
+        p_p = 0.9
+        d = tf.norm(act_replicated - votes, axis=-1, keepdims=True)
+        d_o = tf.reduce_mean(tf.reduce_mean(d))
+        d_p = d_o * 0.5
+        t = tf.constant(np.log(p_p * (out_capsules - 1)) - np.log(1 - p_p), dtype=tf.float32) \
+                / (d_p - d_o + 1e-12)
+        t = tf.expand_dims(t, axis=-1)
+
+        # Calc log prior using inverse distances
+        logits = tf.norm(t * d, axis=-1)
+
+        return i + 1, logits, activations
+
+    activations = tf.TensorArray(
+      dtype=tf.float32, size=num_routing, clear_after_read=False)
+    logits = tf.fill(logit_shape, 0.0)
+
+    i = tf.constant(0, dtype=tf.int32)
+    _, logits, activations = tf.while_loop(
+      lambda i, logits, activations: i < num_routing,
+      _body,
+      loop_vars=[i, logits, activations],
+      swap_memory=True)
+
+    return tf.cast(activations.read(num_routing - 1), dtype='float32')
+
+
+# routing by agreement
+def dynamic_routing(votes, biases, logit_shape, input_dim, num_routing):
+
+    votes_t_shape = [5, 0, 1, 2, 3, 4]
+    r_t_shape = [1, 2, 3, 4, 5, 0]
+    votes_trans = tf.transpose(votes, votes_t_shape)
+
+    def _body(i, logits, activations):
+        """Routing while loop."""
+
+        route = tf.nn.softmax(logits, axis=-1)
+        preactivate_unrolled = route * votes_trans
+        preact_trans = tf.transpose(preactivate_unrolled, r_t_shape)
+        preactivate = tf.reduce_sum(preact_trans, axis=1) + biases
+        activation = squash(preactivate)
+        activations = activations.write(i, activation)
+
+        act_3d = tf.expand_dims(activation, 1)
+        act_replicated = tf.tile(act_3d, [1, input_dim, 1, 1, 1, 1])
         distances = tf.reduce_sum(votes * act_replicated, axis=-1)
         logits += distances
         return i + 1, logits, activations

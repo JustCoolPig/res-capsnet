@@ -15,6 +15,7 @@ import sklearn.metrics
 
 import utils
 from capsule.conv_capsule_network import ConvCapsNet
+from capsule.capsule_network import CapsNet
 from capsule.utils import margin_loss
 from data.mnist import create_mnist
 from data.fashion_mnist import create_fashion_mnist
@@ -35,7 +36,7 @@ argparser.add_argument("--reconstruction_weight", default=0.00001, type=float,
   help="Loss of reconstructions")
 argparser.add_argument("--log_dir", default="experiments/tmp", 
   help="Log dir for tensorbaord")    
-argparser.add_argument("--batch_size", default=32, type=int, 
+argparser.add_argument("--batch_size", default=128, type=int, 
   help="Batch size of training data")
 argparser.add_argument("--enable_tf_function", default=True, type=bool, 
   help="Enable tf.function for faster execution")
@@ -54,8 +55,8 @@ argparser.add_argument("--use_bias", default=True, type=bool,
 argparser.add_argument("--use_reconstruction", default=True, type=bool, 
   help="Use the reconstruction network as regularization loss")
 argparser.add_argument("--routing", default="rba",
-  help="rba, em, sda, conv")
-argparser.add_argument("--layers", default="64,32,10",
+  help="rba, em, sda")
+argparser.add_argument("--layers", default="32,32,10",
   help=", seperated list of layers. Each number represents the number of hidden units except for the first layer the number of channels.")
 argparser.add_argument("--dimensions", default="8,8,16",
   help=", seperated list of layers. Each number represents the dimension of the layer.")
@@ -72,6 +73,7 @@ argparser.add_argument("--make_skips", default=False, type=bool,
 argparser.add_argument("--skip_dist", default=2, type=int, 
   help="Distance of skip connection.")
 
+argparser.add_argument("--model", default="CapsNet", help="CapsNet or ConvCapsNet")
 
 # Load hyperparameters from cmd args and update with json file
 args = argparser.parse_args()
@@ -122,7 +124,10 @@ def train(train_ds, test_ds, class_names):
   test_writer = tf.summary.create_file_writer("%s/log/test" % args.log_dir)
 
   with strategy.scope():
-    model = ConvCapsNet(args)
+    if args.model == "ConvCapsNet":
+      model = ConvCapsNet(args)
+    else:
+      model = CapsNet(args)
     optimizer = tf.optimizers.Adam(learning_rate=args.learning_rate)
     checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
 
@@ -134,7 +139,7 @@ def train(train_ds, test_ds, class_names):
       x, y = inputs
       with tf.GradientTape() as tape:
         logits, reconstruction, layers = model(x, y)
-        #model.summary()
+        model.summary()
         loss, _ = compute_loss(logits, y, reconstruction, x)
       
       grads = tape.gradient(loss, model.trainable_variables)
@@ -153,7 +158,7 @@ def train(train_ds, test_ds, class_names):
       acc = compute_accuracy(logits, y)
 
       pred = tf.math.argmax(logits, axis=1)
-      cm = tf.math.confusion_matrix(y, pred, num_classes=10)
+      #cm = tf.math.confusion_matrix(y, pred, num_classes=10)
       return acc, cm
 
     # Define functions for distributed training
@@ -226,22 +231,22 @@ def train(train_ds, test_ds, class_names):
           distr_acc, distr_cm = distributed_test_step(data)
           for r in range(num_replicas):
             if num_replicas > 1:
-              cm += distr_cm.values[r]
+              #cm += distr_cm.values[r]
               test_acc.append(distr_acc.values[r].numpy())
             else:
-              cm += distr_cm
+              #cm += distr_cm
               test_acc.append(distr_acc)
 
         # Log test results (for replica 0 only for activation map and reconstruction)
         test_acc = np.mean(test_acc)
         max_acc = test_acc if test_acc > max_acc else max_acc
-        figure = utils.plot_confusion_matrix(cm.numpy(), class_names)
-        cm_image = utils.plot_to_image(figure)
+        #figure = utils.plot_confusion_matrix(cm.numpy(), class_names)
+        #cm_image = utils.plot_to_image(figure)
         print("TEST | epoch %d (%d): acc=%.4f, loss=%.4f" % 
               (epoch, step, test_acc, test_loss.result()), flush=True)  
 
         with test_writer.as_default(): 
-          tf.summary.image("Confusion Matrix", cm_image, step=step)
+          #tf.summary.image("Confusion Matrix", cm_image, step=step)
           tf.summary.scalar("General/Accuracy", test_acc, step=step)
           tf.summary.scalar("General/Loss", test_loss.result(), step=step)
         test_loss.reset_states()

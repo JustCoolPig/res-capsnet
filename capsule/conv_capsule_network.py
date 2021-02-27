@@ -28,12 +28,19 @@ class ConvCapsNet(tf.keras.Model):
         self.make_skips = args.make_skips
         self.skip_dist = args.skip_dist
 
+        CapsuleType = {
+            "rba": Capsule,
+            "em": EMCapsule,
+            "sda": GammaCapsule
+        }
+
         if args.dataset == 'mnist':
             img_size = 24 
         elif args.dataset == 'cifar10':
             img_size = 32
         else:
             raise NotImplementedError()
+
         conv1_filters, conv1_kernel, conv1_stride = 128, 7, 2
         out_height = (img_size - conv1_kernel) // conv1_stride + 1
         out_width = (img_size - conv1_kernel) // conv1_stride + 1 
@@ -52,32 +59,35 @@ class ConvCapsNet(tf.keras.Model):
             # reshape into capsule shape
             self.capsuleShape = tf.keras.layers.Reshape(target_shape=(out_height, out_width, 1, conv1_filters), name='toCapsuleShape')
 
-            self.batchNorm = BatchNormalization()
-            
-            # convolutional capsule layers
-            self.capsule_layers = []
-            for i in range(len(layers)-1):
-                self.capsule_layers.append(
-                    ConvCapsule(
-                            name="ConvCapsuleLayer" + str(i), 
-                            in_capsules=layers[i], 
-                            in_dim=dimensions[i], 
-                            out_dim=dimensions[i], 
-                            out_capsules=layers[i+1], 
-                            kernel_size=3,
-                            routing_iterations=args.iterations))
+            self.primary = ConvCapsule(
+                            name="PrimaryCapsuleLayer", 
+                            in_capsules=layers[0], 
+                            in_dim=dimensions[0], 
+                            out_dim=dimensions[1], 
+                            out_capsules=layers[1], 
+                            kernel_size=7,
+                            routing_iterations=args.iterations,
+                            routing=args.routing)
+
+            #  (64, 9, 9, 32, 8)
 
             # flatten for input to FC capsule
-            self.flatten = tf.keras.layers.Reshape(target_shape=(out_height * out_width * layers[-2], dimensions[-2]), name='flatten')
-            
-            # fully connected caspule layer
-            self.FCCapsuleLayer = Capsule(
-                        name="FCCapsuleLayer",
-                        in_capsules = out_height * out_width * layers[-2], 
-                        in_dim = dimensions[-2], 
-                        out_capsules = layers[-1],
-                        out_dim = dimensions[-1], 
-                        use_bias = self.use_bias)                    
+            self.flatten = tf.keras.layers.Reshape(target_shape=(out_height * out_width * layers[1], dimensions[1]), name='flatten')
+
+            # (64, 2592, 8)
+
+            # capsule layers
+            self.capsule_layers = []
+            for i in range(1, len(layers)-1):
+                self.capsule_layers.append(
+                    CapsuleType[args.routing](
+                        name="FCCapsuleLayer" + str(i), 
+                        in_capsules = (out_height * out_width * layers[1] if i == 1 else layers[i-1]), 
+                        in_dim = (dimensions[1] if i == 1 else dimensions[i-1]), 
+                        out_dim = dimensions[i], 
+                        out_capsules = layers[i], 
+                        use_bias = self.use_bias)
+                )
 
             if self.use_reconstruction:
                 self.reconstruction_network = ReconstructionNetwork(
@@ -94,9 +104,10 @@ class ConvCapsNet(tf.keras.Model):
     # Inference
     def call(self, x, y):
         x = self.conv_1(x)
-        x = self.batchNorm(x)
         x = self.capsuleShape(x)
+        x = self.primary(x)
         layers = [x]
+        x = self.flatten(x)
 
         capsule_outputs = []    
         i = 0    
@@ -115,9 +126,6 @@ class ConvCapsNet(tf.keras.Model):
             
             i += 1
             layers.append(x)
-
-        x = self.flatten(x)
-        x = self.FCCapsuleLayer(x)
  
         r = self.reconstruction_network(x, y) if self.use_reconstruction else None
         out = self.norm(x)
